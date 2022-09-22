@@ -48,7 +48,9 @@ pub async fn get_raw(
 				Some(x) => x.to_str().map_err(|e| internal_error!(e))?.to_owned(),
 				None => return Err(internal_error!(req).into()),
 			},
-			reqwest::StatusCode::NOT_FOUND => return Err(UserError::NotFound.into()),
+			// seafile returns 200 with an error page instead of 404 sometimes, 
+			// presumably when a share link exists but the file is deleted
+			reqwest::StatusCode::OK | reqwest::StatusCode::NOT_FOUND => return Err(UserError::NotFound.into()),
 			_ => return Err(internal_error!(req).into()),
 		}
 	};
@@ -64,9 +66,7 @@ pub async fn get_raw(
 	let backing_request_status = backing_request.status();
 	let backing_stream = backing_request.bytes_stream();
 
-	// TODO: resumable download headers
-	// TODO: mime type based on `_filename` extension
 	Ok(HttpResponseBuilder::new(backing_request_status)
-		.insert_header((actix_web::http::header::CONTENT_TYPE, "application/octet-stream"))
+		.insert_header((actix_web::http::header::CONTENT_SECURITY_POLICY, "sandbox"))
 		.streaming(backing_stream))
 }
