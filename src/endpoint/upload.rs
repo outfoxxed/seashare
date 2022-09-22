@@ -13,6 +13,10 @@ use crate::error::internal as internal_error;
 
 type UploadError = crate::error::Error<UserError>;
 
+pub fn config(cfg: &mut web::ServiceConfig) {
+	cfg.service(upload);
+}
+
 #[derive(Error, Debug)]
 pub enum UserError {
 	#[error("no file submitted")]
