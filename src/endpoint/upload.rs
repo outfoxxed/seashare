@@ -61,25 +61,30 @@ pub enum InternalError {
 	MalformedShareLink(String),
 }
 
+#[derive(serde::Deserialize)]
+pub struct FilenameQuery {
+	filename: Option<String>,
+}
+
 #[actix_web::post(
 	"/upload/{library:[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}}"
 )]
 pub async fn upload(
 	library: web::Path<String>,
-	seafile_token: web::Header<SeafileToken>,
+	web::Query(FilenameQuery { mut filename }): web::Query<FilenameQuery>,
+	web::Header(SeafileToken(seafile_token)): web::Header<SeafileToken>,
 	mut multipart: actix_multipart::Multipart,
 	reqwest: web::Data<reqwest::Client>,
 	config: web::Data<crate::Config>,
 ) -> Result<String, UploadError> {
 	let library = library.into_inner();
-	let seafile_token = seafile_token.into_inner().0;
 	let server = &config.seafile_server;
 
 	log::debug!("Client uploading to library {library}");
 
 	// -- acquire multipart field
-	let (mut multipart_field, submitted_filename) = {
-		let mut multipart_field = None::<(actix_multipart::Field, String)>;
+	let mut multipart_field = {
+		let mut multipart_field = None;
 		while let Some(field) = multipart
 			.try_next()
 			.await
@@ -89,12 +94,11 @@ pub async fn upload(
 			if content_disposition.get_name() != Some("file") {
 				continue
 			}
-			let filename = match content_disposition.get_filename() {
-				Some(x) => x.to_owned(),
-				None => return Err(UserError::FilenameNotSpecified.into()),
-			};
+			if let (None, Some(name)) = (&filename, content_disposition.get_filename()) {
+				filename = Some(name.to_owned())
+			}
 
-			multipart_field = Some((field, filename));
+			multipart_field = Some(field);
 			break
 		}
 
@@ -102,6 +106,11 @@ pub async fn upload(
 			Some(x) => x,
 			None => return Err(UserError::NoFileSubmitted.into()),
 		}
+	};
+
+	let filename = match filename {
+		Some(x) => x,
+		None => return Err(UserError::FilenameNotSpecified.into()),
 	};
 
 	// -- send file to seafile server
@@ -208,7 +217,7 @@ pub async fn upload(
 			}
 		}
 	};
-	log::trace!("Uploaded file '{submitted_filename}', seafile id: '{file_id}'");
+	log::trace!("Uploaded file '{filename}', seafile id: '{file_id}'");
 
 	// -- get share link from seafile server
 	let share_link = {
@@ -237,7 +246,7 @@ pub async fn upload(
 			.ok_or_else(|| internal_error!(InternalError::MalformedShareLink(share_link_json)))?
 			.to_owned()
 	};
-	log::trace!("Created share link for upload '{submitted_filename}': '{share_link}'");
+	log::trace!("Created share link for upload '{filename}': '{share_link}'");
 
 	Ok(share_link)
 }
