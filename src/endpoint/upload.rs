@@ -115,7 +115,10 @@ pub async fn upload(
 
 	// -- send file to seafile server
 	let auth_header = format!("Token {}", seafile_token);
-	let uploaded_filename = uuid::Uuid::new_v4().to_string();
+	let uploaded_filename = match filename.rsplit_once('.') {
+		Some((_, extension)) => format!("{}.{extension}", uuid::Uuid::new_v4().to_string()),
+		None => uuid::Uuid::new_v4().to_string(),
+	};
 
 	let (channel, send_task) = {
 		// -- acquire seafile upload link
