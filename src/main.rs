@@ -12,6 +12,7 @@ use actix_web::{
 pub struct Config {
 	host: String,
 	port: u16,
+	return_protocol: String,
 	seafile_server: String,
 }
 

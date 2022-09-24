@@ -1,7 +1,7 @@
 use actix_web::{
 	http,
 	web::{self, Bytes},
-	ResponseError,
+	ResponseError, HttpMessage,
 };
 use futures_util::TryStreamExt;
 use thiserror::Error;
@@ -19,6 +19,8 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 
 #[derive(Error, Debug)]
 pub enum UserError {
+	#[error("missing host header")]
+	MissingHostHeader,
 	#[error("no file submitted")]
 	NoFileSubmitted,
 	#[error("filename not specified")]
@@ -43,7 +45,8 @@ impl ResponseError for UserError {
 		use http::StatusCode;
 
 		match self {
-			Self::NoFileSubmitted
+			Self::MissingHostHeader
+			| Self::NoFileSubmitted
 			| Self::MultipartError
 			| Self::ConnectionDropped
 			| Self::FilenameNotSpecified => StatusCode::BAD_REQUEST,
@@ -76,9 +79,17 @@ pub async fn upload(
 	mut multipart: actix_multipart::Multipart,
 	reqwest: web::Data<reqwest::Client>,
 	config: web::Data<crate::Config>,
+	request: actix_web::HttpRequest,
 ) -> Result<String, UploadError> {
 	let library = library.into_inner();
-	let server = &config.seafile_server;
+	let crate::Config { seafile_server: server, return_protocol, .. } = &**config;
+	let host = match request.headers().get("host") {
+		Some(x) => match x.to_str() {
+			Ok(x) => x,
+			Err(_) => return Err(UserError::MissingHostHeader.into()),
+		},
+		None => return Err(UserError::MissingHostHeader.into()),
+	};
 
 	log::debug!("Client uploading to library {library}");
 
@@ -250,6 +261,11 @@ pub async fn upload(
 			.to_owned()
 	};
 	log::trace!("Created share link for upload '{filename}': '{share_link}'");
+	
+	// https://example.com/f/<share_id>/
+	let share_id = share_link[.. share_link.len() - 1].rsplit_once('/')
+		.map(|(_, id)| id)
+		.ok_or_else(|| internal_error!(share_link))?;
 
-	Ok(share_link)
+	Ok(format!("{return_protocol}://{host}/raw/{share_id}/{filename}"))
 }
