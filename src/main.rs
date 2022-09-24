@@ -17,9 +17,21 @@ pub struct Config {
 async fn main() -> std::io::Result<()> {
 	env_logger::init();
 
-	let config = toml::from_str::<Config>(
-		&std::fs::read_to_string("config.toml").expect("could not load config file"),
-	)?;
+	let config = {
+		let args = std::env::args();
+		let config_file = match args.len() {
+			1 => "config.toml".to_owned(),
+			2 => args.into_iter().skip(1).next().unwrap().to_owned(),
+			_ => {
+				println!("Usage: seashare [config_file]");
+				std::process::exit(1);
+			},
+		};
+
+		toml::from_str::<Config>(
+			&std::fs::read_to_string(config_file).expect("could not load config file"),
+		)?
+	};
 
 	let reqwest = reqwest::Client::builder()
 		.redirect(reqwest::redirect::Policy::custom(|attempt| attempt.stop()))
