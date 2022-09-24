@@ -10,6 +10,8 @@ use actix_web::{
 
 #[derive(serde::Deserialize, Clone)]
 pub struct Config {
+	host: String,
+	port: u16,
 	seafile_server: String,
 }
 
@@ -38,6 +40,7 @@ async fn main() -> std::io::Result<()> {
 		.build()
 		.unwrap();
 
+	let Config { host, port, .. } = config.clone();
 	HttpServer::new(move || {
 		App::new()
 			.wrap(Logger::default())
@@ -46,7 +49,7 @@ async fn main() -> std::io::Result<()> {
 			.app_data(web::Data::<reqwest::Client>::new(reqwest.clone()))
 			.service(web::scope("").configure(endpoint::config))
 	})
-	.bind(("127.0.0.1", 8080))?
+	.bind((host, port))?
 	.run()
 	.await
 }
